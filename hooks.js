@@ -30,7 +30,7 @@ function getUserId () {
 
 const proto = Mongo.Collection.prototype;
 const directEnv = new Meteor.EnvironmentVariable(false);
-const methods = ['find', 'findOne', 'insert', 'update', 'remove', 'upsert'];
+const methods = ['find', 'findOne', 'findOneAsync', 'insert', 'insertAsync', 'update', 'updateAsync', 'remove', 'upsert'];
 
 // create the collection._partitionerBefore.* methods
 // have to create it initially using a getter so we can store self=this and create a new group of functions which have access to self
@@ -77,7 +77,7 @@ methods.forEach(method => {
 		global.hookLogging && typeof args[0]!='string' && console.log('hook', '\n\n');
 
 		// if the method is update or remove, automatically apply the find hooks to limit the update/remove to the user's group
-		if ((method=='update' || method=='remove') && this._groupingBefore_find) {
+		if ((method=='update' || method=='updateAsync' || method=='remove') && this._groupingBefore_find) {
 			global.hookLogging && typeof args[0]!='string' && console.log('hook', 'b4i', this._name+"."+method, JSON.stringify(args[0]), JSON.stringify(args[1]));
 			// don't send args[1] for update or remove.
 			// need to send empty object instead to prevent args[1] being modified

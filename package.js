@@ -1,12 +1,12 @@
 Package.describe({
   name: "wildhart:partitioner",
   summary: "Transparently divide a meteor app into different instances shared between groups of users.",
-  version: "3.0.2",
+  version: "3.0.3",
   git: "https://github.com/wildhart/meteor-partitioner"
 });
 
 Package.onUse(function (api) {
-  api.versionsFrom(["1.6.1", "2.3"]);
+  api.versionsFrom(["3.0"]);
   // Client & Server deps
   api.use([
     'accounts-base',
