@@ -30,7 +30,23 @@ function getUserId () {
 
 const proto = Mongo.Collection.prototype;
 const directEnv = new Meteor.EnvironmentVariable(false);
+
+// The sync methods are the only ones we need to hook on Meteor 2.x:
+// every *Async method (insertAsync, findOneAsync, cursor.fetchAsync, ...)
+// is implemented in Meteor 2.x as a thin wrapper which synchronously calls
+// the corresponding sync method on the prototype (see mongo/collection.js,
+// ASYNC_COLLECTION_METHODS). So hooking the sync methods automatically
+// covers all async application code too.
+// NOTE: this is NOT true on Meteor 3 - when bumping to 3.0 this package must
+// be replaced with the Meteor 3 branch which hooks the async methods directly.
 const methods = ['find', 'findOne', 'insert', 'update', 'remove', 'upsert'];
+
+// Async names exposed on _partitionerDirect so that fiber-free application
+// code can perform direct (unpartitioned) operations with await.
+// These are safe on Meteor 2.x because the async wrapper calls the sync
+// method synchronously, i.e. still inside directEnv.withValue() below.
+const asyncMethods = ['findOneAsync', 'insertAsync', 'updateAsync', 'removeAsync', 'upsertAsync'];
+const directMethods = [...methods, ...asyncMethods];
 
 // create the collection._partitionerBefore.* methods
 // have to create it initially using a getter so we can store self=this and create a new group of functions which have access to self
@@ -55,7 +71,7 @@ Object.defineProperty(proto, '_partitionerDirect', {
 		// console.log('creating direct functions', this._name);
 		const self = this;
 		const fns = {};
-		methods.forEach(method => fns[method] = function(...args) {
+		directMethods.forEach(method => fns[method] = function(...args) {
 			return directEnv.withValue(true, () => proto[method].apply(self, args));
 		});
 		// replace the .direct prototype with the created object, so we don't have to recreate it every time.

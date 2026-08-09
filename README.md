@@ -5,6 +5,11 @@ Transparently divide a single Meteor app into several different instances shared
 
 This fork of [mizzao:partitioner](https://github.com/Meteor-Community-Packages/meteor-partitioner) does not use a separate collection to hold the users groups, instead it just uses the `Meteor.users` collection.
 
+> **v3.2.0**: a full async API is now available (`groupAsync`, `setUserGroupAsync`, ...) - see
+> [Async API](#async-api-v320) below. Non-breaking: the sync API is unchanged. Runs on
+> Meteor 2.x only - **Meteor 3 support is planned as v4.0.0** (the collection hooks rely on
+> Meteor 2.x fiber internals, so the constraint solver will refuse to install 3.2.0 on Meteor 3).
+
 ## What's this do?
 
 Provides facilities to transparently separate your Meteor app into different instances where a group of users sees the data in each instance. You can write client-side and server-side code as if one particular set of users has the app all to themselves. This is illustrated in the following diagram:
@@ -47,7 +52,36 @@ Collections that have been partitioned will behave as if there is a separate ins
 - `update` and `remove` operations will only affect documents for the current group.
 - Attempting any operations on a partitioned collection for which a user has not been assigned to a group will result in an error.
 
+The `*Async` counterparts (`findOneAsync`, `insertAsync`, `updateAsync`, `removeAsync`, `upsertAsync`, `cursor.fetchAsync`, etc.) are intercepted too: on Meteor 2.x they call through the hooked sync methods, so fully async/await application code is partitioned identically.
+
 This is accomplished using selector rewriting based on the current `userId` both on the client and in server methods, and Meteor's environment variables. For more details see the source.
+
+## Async API (v3.2.0+)
+
+Every group-management method now has an async variant, recommended for all new code -
+they are drop-in awaitable equivalents, and they are the API that will carry forward to
+the Meteor 3 release (v4.0.0), so code written against them will not need to change again:
+
+| Sync (fiber-based)                   | Async (recommended)                            |
+|--------------------------------------|------------------------------------------------|
+| `Partitioner.setUserGroup(u, g)`     | `await Partitioner.setUserGroupAsync(u, g)`    |
+| `Partitioner.getUserGroup(u)`        | `await Partitioner.getUserGroupAsync(u)`       |
+| `Partitioner.clearUserGroup(u)`      | `await Partitioner.clearUserGroupAsync(u)`     |
+| `Partitioner.group()`                | `await Partitioner.groupAsync()` (client too)  |
+| `Partitioner.bindUserGroup(u, fn)`   | `await Partitioner.bindUserGroupAsync(u, fn)`  |
+| `Partitioner.addToGroup(c, id, g)`   | `await Partitioner.addToGroupAsync(c, id, g)`  |
+| `Partitioner.removeFromGroup(...)`   | `await Partitioner.removeFromGroupAsync(...)`  |
+| `Partitioner._isAdmin(id)`           | `await Partitioner._isAdminAsync(id)`          |
+
+Notes:
+
+- `Partitioner.bindGroup(groupId, fn)` and `Partitioner.directOperation(fn)` are unchanged -
+  both already accept async functions (the bound group survives `await` on Meteor 2.x).
+- `collection._partitionerDirect` also exposes `findOneAsync`, `insertAsync`, `updateAsync`,
+  `removeAsync` and `upsertAsync`, so direct (unpartitioned) operations can be written fiber-free.
+- `Partitioner.partitionCollection()` prefers `createIndexAsync` and returns its promise,
+  so it can be awaited in server startup code.
+- The sync methods remain fully supported on 2.x for existing fiber-style code.
 
 ## Common (Client/Server) API
 
@@ -240,6 +274,13 @@ See [CrowdMapper](https://github.com/mizzao/CrowdMapper) for a highly concurrent
 - See also http://stackoverflow.com/q/17356615/586086
 
 ## Version History
+
+### **3.2.0 (2026-08-10)**
+
+- New [async API](#async-api-v320): `setUserGroupAsync`, `getUserGroupAsync`, `clearUserGroupAsync`, `groupAsync`, `bindUserGroupAsync`, `addToGroupAsync`, `removeFromGroupAsync`, `_isAdminAsync`, plus async `_partitionerDirect` operations and an awaitable `partitionCollection()`. Non-breaking - the sync API is unchanged.
+- Fixed: the find hook now respects the `projection` option (the Meteor 2.6+ alias of `fields`) instead of clobbering it with an injected `fields` option, which caused queries to return full documents - thanks [@Nauzer](https://github.com/wildhart/meteor-partitioner/pull/1).
+- New startup warning if one of the wrapped `Accounts` functions (`createUser`, `createUserAsync`, `findUserByEmail`, `findUserByUsername`, `_attemptLogin`) is missing - previously a Meteor rename would silently leave login/user lookups partitioned.
+- Meteor 3 is NOT yet supported - coming as v4.0.0. This version's hooks rely on Meteor 2.x fiber internals.
 
 ### **3.0.2 (2022-03-22)**
 

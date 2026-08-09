@@ -32,10 +32,21 @@ Partitioner = {
 		return userId && (Meteor.users._partitionerDirect.findOne(userId, {fields: {group: 1}}) || {}).group;
 	},
 
+	// Async alias so isomorphic code can call `await Partitioner.groupAsync()`
+	// on both client and server. On the client the lookup is minimongo, so the
+	// sync implementation is simply wrapped.
+	async groupAsync() {
+		return this.group();
+	},
+
 	// This can be replaced - currently not documented
 	// Don't retrieve full user object - fix bug #32
 	_isAdmin(_id) {
 		return Meteor.users._partitionerDirect.find({_id, admin: true}, {fields: {_id: 1}}).count() > 0;
+	},
+
+	async _isAdminAsync(_id) {
+		return this._isAdmin(_id);
 	},
 
 	// Add in groupId for client so as not to cause unexpected sync changes
