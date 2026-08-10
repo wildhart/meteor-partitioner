@@ -1,12 +1,12 @@
 Package.describe({
   name: "wildhart:partitioner",
   summary: "Transparently divide a meteor app into different instances shared between groups of users.",
-  version: "3.2.0",
+  version: "4.0.0",
   git: "https://github.com/wildhart/meteor-partitioner"
 });
 
 Package.onUse(function (api) {
-  api.versionsFrom(["1.6.1", "2.3"]);
+  api.versionsFrom(["3.0"]);
   // Client & Server deps
   api.use([
     'accounts-base',
@@ -16,16 +16,26 @@ Package.onUse(function (api) {
     'mongo' // Mongo.Collection available
   ]);
 
-  // Still required on Meteor 2.x: provides EnvironmentVariable.prototype.set,
-  // which the find/insert hooks use to cache the current groupId.
-  // Meteor 2.x async/await is fiber-backed, so this continues to work with
-  // fully async application code. Must be replaced when moving to Meteor 3.
-  api.use("wildhart:env-var-set@0.0.1");
-
-  api.addFiles('hooks.js');
   api.addFiles('common.js');
+  // Meteor 3: the server hooks the *Async collection methods and cursor
+  // consumption points (no fibers); the client keeps the sync minimongo hooks.
+  api.addFiles('hooks.js', 'server');
+  api.addFiles('hooks_client.js', 'client');
   api.addFiles('grouping.js', 'server');
   api.addFiles('grouping_client.js', 'client');
 
   api.export(['Partitioner', 'Grouping']);
+});
+
+Package.onTest(function (api) {
+  api.use([
+    'accounts-base',
+    'check',
+    'ecmascript',
+    'ddp',
+    'mongo',
+    'tinytest',
+  ]);
+  api.use('wildhart:partitioner');
+  api.addFiles('tests_server.js', 'server');
 });

@@ -275,6 +275,26 @@ See [CrowdMapper](https://github.com/mizzao/CrowdMapper) for a highly concurrent
 
 ## Version History
 
+### **4.0.0 (2026-08-11)**
+
+- **Meteor 3 only** (`api.versionsFrom(['3.0'])`); Meteor 1.x/2.x apps stay on 3.2.0.
+- **BREAKING: async-only API.** The fiber-based sync methods (`setUserGroup`,
+  `getUserGroup`, `clearUserGroup`, `group` (server), `bindUserGroup`, `addToGroup`,
+  `removeFromGroup`, `_isAdmin` (server)) are removed - the sync Mongo methods they
+  relied on no longer exist on the Meteor 3 server. Use the `*Async` equivalents
+  (available since 3.2.0). `bindGroup`, `directOperation` and the client API are unchanged.
+- New Meteor 3 server hook architecture: the async collection methods are hooked
+  directly, and `find()` scoping is applied lazily per-cursor (fetch/count/observe/
+  publish all covered) by mutating only that cursor's own description - nothing shared
+  is ever patched, so concurrent publications cannot observe each other's group filter.
+  `collection._partitionerDirect.find()` remains synchronous.
+- The allow/deny admin idiot-proofing is restored using async validators.
+- New server tenant-isolation test suite: `PARTITIONER_SELFTEST=1 meteor test-packages ./
+  --driver-package test-in-console --once`.
+- Based on the Meteor 3 groundwork in [PR #4](https://github.com/wildhart/meteor-partitioner/pull/4)
+  by [@klaucode](https://github.com/klaucode) - thanks! - reworked onto 3.2.0 with a
+  different cursor-hooking design and other fixes.
+
 ### **3.2.0 (2026-08-10)**
 
 - New [async API](#async-api-v320): `setUserGroupAsync`, `getUserGroupAsync`, `clearUserGroupAsync`, `groupAsync`, `bindUserGroupAsync`, `addToGroupAsync`, `removeFromGroupAsync`, `_isAdminAsync`, plus async `_partitionerDirect` operations and an awaitable `partitionCollection()`. Non-breaking - the sync API is unchanged.
