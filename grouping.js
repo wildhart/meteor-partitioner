@@ -7,7 +7,7 @@ Meteor.publish(null, function () {
 });
 
 // Special hook for Meteor.users to scope for each group
-function userFindHook(userId, selector /*, options*/) {
+async function userFindHook(userId, selector /*, options*/) {
 	const isDirectSelector = Helpers.isDirectUserSelector(selector);
 	if (
 		((allowDirectIdSelectors || Partitioner._searchAllUsers.get()) && isDirectSelector)
@@ -21,7 +21,7 @@ function userFindHook(userId, selector /*, options*/) {
 	if (!userId && !groupId) return true;
 
 	if (!groupId) {
-		const user = Meteor.users._partitionerDirect.findOne(userId, {fields: {group: 1}});
+		const user = await Meteor.users._partitionerDirect.findOneAsync(userId, {fields: {group: 1}});
 
 		// user will be undefined inside reactive publish when user is deleted while subscribed
 		if (!user) return false;
@@ -30,15 +30,18 @@ function userFindHook(userId, selector /*, options*/) {
 
 		// If user is admin and not in a group, proceed as normal (select all users)
 		// do user2 findOne separately so that the findOne above can hit the cache
-		if (!groupId && Meteor.users._partitionerDirect.findOne(userId, {fields: {admin: 1}}).admin) return true;
+		if (!groupId && (await Meteor.users._partitionerDirect.findOneAsync(userId, {fields: {admin: 1}})).admin) return true;
 
 		// Normal users need to be in a group
 		if (!groupId) throw new Meteor.Error(403, ErrMsg.groupErr);
 
-		Partitioner._currentGroup.set(groupId);
+		// Cache in the current async context (no-op outside one - just a cache miss)
+		Partitioner._currentGroup._set(groupId);
 	}
 
-	filter = {
+	// NB: const matters - with async hooks an undeclared global here would race
+	// between concurrent invocations
+	const filter = {
 		"group": groupId,
 	};
 	if (!isDirectSelector) {
@@ -56,22 +59,23 @@ function userFindHook(userId, selector /*, options*/) {
 	return true;
 }
 
-function hookGetSetGroup(userId) {
+async function hookGetSetGroup(userId) {
 	let groupId = Partitioner._currentGroup.get();
 
 	if (!groupId) {
 		if (!userId) throw new Meteor.Error(403, ErrMsg.userIdErr);
 
-		groupId = Partitioner.getUserGroup(userId);
+		groupId = await Partitioner.getUserGroupAsync(userId);
 		if (!groupId) throw new Meteor.Error(403, ErrMsg.groupErr);
 
-		Partitioner._currentGroup.set(groupId);
+		// Cache in the current async context (no-op outside one - just a cache miss)
+		Partitioner._currentGroup._set(groupId);
 	}
 	return groupId;
 }
 
 // No allow/deny for find so we make our own checks
-function findHook(userId, selector, options) {
+async function findHook(userId, selector, options) {
 	if (
 		// Don't scope for direct operations
 		Partitioner._directOps.get() === true
@@ -82,7 +86,7 @@ function findHook(userId, selector, options) {
 
 	) return true;
 
-	const groupId = hookGetSetGroup(userId);
+	const groupId = await hookGetSetGroup(userId);
 
 	// force the selector to scope for the _groupId
 	if (selector == null) {
@@ -113,42 +117,42 @@ function findHook(userId, selector, options) {
 	return true;
 };
 
-function insertHook(multipleGroups, userId, doc) {
+async function insertHook(multipleGroups, userId, doc) {
 	// Don't add group for direct inserts
 	if (Partitioner._directOps.get() === true) return true;
 
-	const groupId = hookGetSetGroup(userId);
+	const groupId = await hookGetSetGroup(userId);
 
 	doc._groupId = multipleGroups ? [groupId] : groupId;
 	return true;
 };
 
-function userInsertHook(userId, doc) {
+async function userInsertHook(userId, doc) {
 	// Don't add group for direct inserts
 	if (Partitioner._directOps.get() === true) return true;
 
-	const groupId = hookGetSetGroup(userId);
+	const groupId = await hookGetSetGroup(userId);
 
 	doc.group = groupId;
 
 	return true;
 };
 
-function upsertHook(multipleGroups, userId, selector, doc) {
+async function upsertHook(multipleGroups, userId, selector, doc) {
 	// Don't add group for direct inserts
 	if (Partitioner._directOps.get() === true) return true;
 
-	const groupId = hookGetSetGroup(userId);
+	const groupId = await hookGetSetGroup(userId);
 
 	doc._groupId = multipleGroups ? [groupId] : groupId;
 	return true;
 };
 
-function userUpsertHook(userId, selector, doc) {
+async function userUpsertHook(userId, selector, doc) {
 	// Don't add group for direct inserts
 	if (Partitioner._directOps.get() === true) return true;
 
-	const groupId = hookGetSetGroup(userId);
+	const groupId = await hookGetSetGroup(userId);
 
 	doc.group = groupId;
 	return true;
@@ -178,60 +182,15 @@ Partitioner = {
 	_searchAllUsers: new Meteor.EnvironmentVariable(),
 
 	// ============================================================
-	// Sync API - fiber-based, deprecated.
-	// Kept intact so the app keeps working mid-migration, but all
-	// application code should move to the *Async equivalents below.
-	// ============================================================
-
-	setUserGroup(userId, groupId) {
-		check(userId, String);
-		check(groupId, String);
-
-		if (Meteor.users._partitionerDirect.findOne(userId, {fields: {group: 1}}).group) {
-			throw new Meteor.Error(403, "User is already in a group");
-		}
-
-		return Meteor.users._partitionerDirect.update(userId, {$set: {group: groupId}});
-	},
-
-	getUserGroup(userId) {
-		check(userId, String);
-		return (Meteor.users._partitionerDirect.findOne(userId, {fields: {group: 1}}) || {}).group;
-	},
-
-	clearUserGroup(userId) {
-		check(userId, String);
-		return Meteor.users._partitionerDirect.update(userId, {$unset: {group: 1}});
-	},
-
-	group() {
-		const groupId = this._currentGroup.get();
-		if (groupId) return groupId;
-
-		let userId;
-		try {
-			userId = Meteor.userId();
-		} catch (error) {}
-
-		return userId && this.getUserGroup(userId);
-	},
-
+	// 4.0.0 (Meteor 3): async-only API. The fiber-based sync methods
+	// (setUserGroup, getUserGroup, clearUserGroup, group, bindUserGroup,
+	// addToGroup, removeFromGroup, _isAdmin) have been REMOVED - the sync
+	// Mongo methods they relied on no longer exist on the Meteor 3 server.
 	bindGroup(groupId, func) {
-		// NOTE: func may be an async function. On Meteor 2.x EnvironmentVariable
-		// values are preserved across `await` (fiber-backed promises), so the
+		// NOTE: func may be an async function. On Meteor 3 EnvironmentVariable
+		// values are preserved across `await` (AsyncLocalStorage), so the
 		// group remains bound for the whole async function.
 		return this._currentGroup.withValue(groupId, func);
-	},
-
-	bindUserGroup(userId, func) {
-		const groupId = Partitioner.getUserGroup(userId);
-
-		if (!groupId) {
-			Meteor._debug(`Dropping operation because ${userId} is not in a group`);
-			return;
-		}
-
-		return Partitioner.bindGroup(groupId, func);
 	},
 
 	directOperation(func) {
@@ -239,56 +198,6 @@ Partitioner = {
 		return this._directOps.withValue(true, func);
 	},
 
-	_isAdmin(_id) {
-		return !!Meteor.users._partitionerDirect.findOne({_id, admin: true}, {fields: {_id: 1}});
-	},
-
-	addToGroup(collection, entityId, groupId) {
-		if (!multipleGroupCollections[collection._name]) {
-			throw new Meteor.Error(403, ErrMsg.multiGroupErr);
-		}
-
-		let currentGroupIds = collection._partitionerDirect.findOne(entityId, {fields: {_groupId: 1}})?._groupId;
-		if (!currentGroupIds) {
-			currentGroupIds = [groupId];
-		} else if (typeof currentGroupIds == 'string') {
-			currentGroupIds = [currentGroupIds];
-		}
-
-		if (currentGroupIds.indexOf(groupId) == -1) {
-			currentGroupIds.push(groupId);
-			collection._partitionerDirect.update(entityId, {$set: {_groupId: currentGroupIds}});
-		}
-		return currentGroupIds;
-	},
-
-	removeFromGroup(collection, entityId, groupId) {
-		if (!multipleGroupCollections[collection._name]) {
-			throw new Meteor.Error(403, ErrMsg.multiGroupErr);
-		}
-
-		let currentGroupIds = collection._partitionerDirect.findOne(entityId, {fields: {_groupId: 1}})?._groupId;
-		if (!currentGroupIds) {
-			return [];
-		}
-
-		if (typeof currentGroupIds == 'string') {
-			currentGroupIds = [currentGroupIds];
-		}
-		const index = currentGroupIds.indexOf(groupId);
-		if (index != -1) {
-			currentGroupIds.splice(index, 1);
-			collection._partitionerDirect.update(entityId, {$set: {_groupId: currentGroupIds}});
-		}
-
-		return currentGroupIds;
-	},
-
-	// ============================================================
-	// Async API - use this from application code.
-	// Method names match the Meteor 3 branch (PR #4) so that when the
-	// package itself is upgraded for Meteor 3, application code which
-	// has already migrated to these methods won't need to change again.
 	// ============================================================
 
 	async setUserGroupAsync(userId, groupId) {
@@ -393,11 +302,14 @@ Partitioner = {
 			});
 		}
 
-		// Idiot-proof the collection against admin users
+		// Idiot-proof the collection against admin users.
+		// allow-deny on Meteor 3 awaits every validator (asyncSome/asyncEvery),
+		// so async deny callbacks under the classic keys work for both client
+		// sync stubs and *Async calls.
 		collection.deny({
-			insert: this._isAdmin,
-			update: this._isAdmin,
-			remove: this._isAdmin
+			insert: (userId) => Partitioner._isAdminAsync(userId),
+			update: (userId) => Partitioner._isAdminAsync(userId),
+			remove: (userId) => Partitioner._isAdminAsync(userId),
 		});
 		collection._partitionerBefore.find(findHook);
 		collection._partitionerBefore.findOne(findHook);
@@ -413,11 +325,7 @@ Partitioner = {
 		}
 
 		// Index the collections by groupId on the server for faster lookups across groups.
-		// Prefer the promise-returning createIndexAsync (available since Meteor 2.8)
-		// so that callers can `await Partitioner.partitionCollection(...)` fiber-free.
-		return collection.createIndexAsync ? collection.createIndexAsync(getPartitionedIndex(options.index), options.indexOptions)
-			: collection.createIndex ? collection.createIndex(getPartitionedIndex(options.index), options.indexOptions)
-			: collection._ensureIndex(getPartitionedIndex(options.index), options.indexOptions);
+		return collection.createIndexAsync(getPartitionedIndex(options.index), options.indexOptions);
 	},
 
 	get allowDirectIdSelectors() {
