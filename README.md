@@ -5,10 +5,10 @@ Transparently divide a single Meteor app into several different instances shared
 
 This fork of [mizzao:partitioner](https://github.com/Meteor-Community-Packages/meteor-partitioner) does not use a separate collection to hold the users groups, instead it just uses the `Meteor.users` collection.
 
-> **v3.2.0**: a full async API is now available (`groupAsync`, `setUserGroupAsync`, ...) - see
-> [Async API](#async-api-v320) below. Non-breaking: the sync API is unchanged. Runs on
-> Meteor 2.x only - **Meteor 3 support is planned as v4.0.0** (the collection hooks rely on
-> Meteor 2.x fiber internals, so the constraint solver will refuse to install 3.2.0 on Meteor 3).
+> **v4.0.0 supports Meteor 3** and is **async-only** - the sync API has been removed
+> (see [Version History](#version-history) for migration notes). Meteor 1.x/2.x apps stay on
+> **v3.2.0**, which added the full [async API](#async-api-v320) alongside the unchanged sync
+> API - migrate your code to the async API on 3.2.0, then bump to Meteor 3 + 4.0.0.
 
 ## What's this do?
 
