@@ -5,10 +5,10 @@ Transparently divide a single Meteor app into several different instances shared
 
 This fork of [mizzao:partitioner](https://github.com/Meteor-Community-Packages/meteor-partitioner) does not use a separate collection to hold the users groups, instead it just uses the `Meteor.users` collection.
 
-> **v4.0.0 supports Meteor 3** and is **async-only** - the sync API has been removed
+> **v4.0.1 supports Meteor 3** and is **async-only** - the sync API has been removed
 > (see [Version History](#version-history) for migration notes). Meteor 1.x/2.x apps stay on
 > **v3.2.0**, which added the full [async API](#async-api-v320) alongside the unchanged sync
-> API - migrate your code to the async API on 3.2.0, then bump to Meteor 3 + 4.0.0.
+> API - migrate your code to the async API on 3.2.0, then bump to Meteor 3 + 4.0.1.
 
 ## What's this do?
 
@@ -60,7 +60,7 @@ This is accomplished using selector rewriting based on the current `userId` both
 
 Every group-management method now has an async variant, recommended for all new code -
 they are drop-in awaitable equivalents, and they are the API that will carry forward to
-the Meteor 3 release (v4.0.0), so code written against them will not need to change again:
+the Meteor 3 release (v4.0.1), so code written against them will not need to change again:
 
 | Sync (fiber-based)                   | Async (recommended)                            |
 |--------------------------------------|------------------------------------------------|
@@ -275,8 +275,10 @@ See [CrowdMapper](https://github.com/mizzao/CrowdMapper) for a highly concurrent
 
 ## Version History
 
-### **4.0.0 (2026-08-11)**
+### **4.0.1 (2026-08-20)**
 
+- Documentation-only republish of 4.0.0 (2026-08-11), which shipped with a stale README.
+  The code is identical.
 - **Meteor 3 only** (`api.versionsFrom(['3.0'])`); Meteor 1.x/2.x apps stay on 3.2.0.
 - **BREAKING: async-only API.** The fiber-based sync methods (`setUserGroup`,
   `getUserGroup`, `clearUserGroup`, `group` (server), `bindUserGroup`, `addToGroup`,
@@ -300,7 +302,7 @@ See [CrowdMapper](https://github.com/mizzao/CrowdMapper) for a highly concurrent
 - New [async API](#async-api-v320): `setUserGroupAsync`, `getUserGroupAsync`, `clearUserGroupAsync`, `groupAsync`, `bindUserGroupAsync`, `addToGroupAsync`, `removeFromGroupAsync`, `_isAdminAsync`, plus async `_partitionerDirect` operations and an awaitable `partitionCollection()`. Non-breaking - the sync API is unchanged.
 - Fixed: the find hook now respects the `projection` option (the Meteor 2.6+ alias of `fields`) instead of clobbering it with an injected `fields` option, which caused queries to return full documents - thanks [@Nauzer](https://github.com/wildhart/meteor-partitioner/pull/1).
 - New startup warning if one of the wrapped `Accounts` functions (`createUser`, `createUserAsync`, `findUserByEmail`, `findUserByUsername`, `_attemptLogin`) is missing - previously a Meteor rename would silently leave login/user lookups partitioned.
-- Meteor 3 is NOT yet supported - coming as v4.0.0. This version's hooks rely on Meteor 2.x fiber internals.
+- Meteor 3 is NOT supported by this version - its hooks rely on Meteor 2.x fiber internals; upgrade to v4.x for Meteor 3.
 
 ### **3.0.2 (2022-03-22)**
 
